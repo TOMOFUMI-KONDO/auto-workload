@@ -31,7 +31,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	githubcomv1beta1 "github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1"
+	tomokongithubcomv1beta1 "github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -65,7 +65,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = githubcomv1beta1.AddToScheme(scheme.Scheme)
+	err = tomokongithubcomv1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme

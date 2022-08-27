@@ -1,6 +1,27 @@
-apiVersion: github.com/v1beta1
+apiVersion: tomokon.github.com/v1beta1
 kind: AutoWorkload
 metadata:
   name: autoworkload-sample
 spec:
-  # TODO(user): Add fields here
+  template:
+    metadata:
+      name: nginx-deployment
+      labels:
+        app: nginx
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app: nginx
+      template:
+        metadata:
+          labels:
+            app: nginx
+        spec:
+          containers:
+            - name: nginx
+              image: nginx:1.14.2
+              ports:
+                - containerPort: 80
+  startAt: "0 7 * * *"
+  stopAt: "0 22 * * *"

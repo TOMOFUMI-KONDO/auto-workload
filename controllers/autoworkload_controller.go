@@ -18,24 +18,30 @@ package controllers
 
 import (
 	"context"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	githubcomv1beta1 "github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1"
+	tomokongithubcomv1beta1 "github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1"
 )
+
+type Clock interface {
+	Now() time.Time
+}
 
 // AutoWorkloadReconciler reconciles a AutoWorkload object
 type AutoWorkloadReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Clock
 }
 
-//+kubebuilder:rbac:groups=github.com,resources=autoworkloads,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=github.com,resources=autoworkloads/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=github.com,resources=autoworkloads/finalizers,verbs=update
+//+kubebuilder:rbac:groups=tomokon.github.com,resources=autoworkloads,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=tomokon.github.com,resources=autoworkloads/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=tomokon.github.com,resources=autoworkloads/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -57,6 +63,6 @@ func (r *AutoWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request
 // SetupWithManager sets up the controller with the Manager.
 func (r *AutoWorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&githubcomv1beta1.AutoWorkload{}).
+		For(&tomokongithubcomv1beta1.AutoWorkload{}).
 		Complete(r)
 }

@@ -17,19 +17,22 @@ limitations under the License.
 package v1beta1
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // AutoWorkloadSpec defines the desired state of AutoWorkload
 type AutoWorkloadSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Template of Workload Resource
+	Template *appsv1.Deployment `json:"template,omitempty"`
 
-	// Foo is an example field of AutoWorkload. Edit autoworkload_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// StartAt is time to start Workload Resource
+	StartAt string `json:"startAt,omitempty"`
+
+	// StopAt is time to stop Workload Resource
+	StopAt string `json:"stopAt,omitempty"`
 }
 
 // AutoWorkloadStatus defines the observed state of AutoWorkload
@@ -40,6 +43,9 @@ type AutoWorkloadStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+// +kubebuilder:resource:shortName="awl"
+//+kubebuilder:printcolumn:name="START_AT",type="string",JSONPath=".spec.startAt"
+//+kubebuilder:printcolumn:name="STOP_AT",type="string",JSONPath=".spec.stopAt"
 
 // AutoWorkload is the Schema for the autoworkloads API
 type AutoWorkload struct {

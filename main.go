@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	githubcomv1beta1 "github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1"
+	tomokongithubcomv1beta1 "github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1"
 	"github.com/TOMOFUMI-KONDO/auto-workload/controllers"
 	//+kubebuilder:scaffold:imports
 )
@@ -44,7 +44,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(githubcomv1beta1.AddToScheme(scheme))
+	utilruntime.Must(tomokongithubcomv1beta1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -71,7 +71,7 @@ func main() {
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "13987764.github.com",
+		LeaderElectionID:       "13987764.tomokon.github.com",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly

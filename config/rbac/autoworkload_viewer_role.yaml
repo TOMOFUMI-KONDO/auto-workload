@@ -5,7 +5,7 @@ metadata:
   name: autoworkload-viewer-role
 rules:
 - apiGroups:
-  - github.com
+  - tomokon.github.com
   resources:
   - autoworkloads
   verbs:
@@ -13,7 +13,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - github.com
+  - tomokon.github.com
   resources:
   - autoworkloads/status
   verbs:
