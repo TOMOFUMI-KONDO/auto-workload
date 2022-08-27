@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"github.com/robfig/cron/v3"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -25,11 +26,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	tomokongithubcomv1beta1 "github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1"
+	workloadv1beta1 "github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1"
 )
 
 type Clock interface {
 	Now() time.Time
+}
+
+type realClock struct{}
+
+func (_ *realClock) Now() time.Time {
+	return time.Now()
 }
 
 // AutoWorkloadReconciler reconciles a AutoWorkload object
@@ -39,30 +46,77 @@ type AutoWorkloadReconciler struct {
 	Clock
 }
 
-//+kubebuilder:rbac:groups=tomokon.github.com,resources=autoworkloads,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=tomokon.github.com,resources=autoworkloads/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=tomokon.github.com,resources=autoworkloads/finalizers,verbs=update
+//+kubebuilder:rbac:groups=workload.tomo-kon.com,resources=autoworkloads,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=workload.tomo-kon.com,resources=autoworkloads/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=workload.tomo-kon.com,resources=autoworkloads/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the AutoWorkload object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.2/pkg/reconcile
 func (r *AutoWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	logger := log.FromContext(ctx)
+	logger.Info("Reconcile started")
 
-	// TODO(user): your logic here
+	awl := &workloadv1beta1.AutoWorkload{}
+	if err := r.Get(ctx, client.ObjectKey{Name: req.Name, Namespace: req.Namespace}, awl); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	nextStart, err := r.next(awl.Spec.StartAt)
+	if err != nil {
+		logger.Error(err, "Failed to calculate next start")
+		return ctrl.Result{}, err
+	}
+
+	nextStop, err := r.next(awl.Spec.StopAt)
+	if err != nil {
+		logger.Error(err, "Failed to calculate next stop")
+		return ctrl.Result{}, err
+	}
+
+	if nextStart.Before(*nextStop) {
+		if err := r.createDeployment(awl); err != nil {
+			logger.Error(err, "Failed to createDeployment")
+			return ctrl.Result{}, err
+		}
+	} else {
+		if err := r.deleteDeployment(awl); err != nil {
+			logger.Error(err, "Failed to deleteDeployment")
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *AutoWorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Clock == nil {
+		r.Clock = &realClock{}
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&tomokongithubcomv1beta1.AutoWorkload{}).
+		For(&workloadv1beta1.AutoWorkload{}).
 		Complete(r)
+}
+
+func (r *AutoWorkloadReconciler) createDeployment(awl *workloadv1beta1.AutoWorkload) error {
+
+}
+
+func (r *AutoWorkloadReconciler) deleteDeployment(awl *workloadv1beta1.AutoWorkload) error {
+
+}
+
+func (r *AutoWorkloadReconciler) next(cronExp string) (*time.Time, error) {
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	schedule, err := parser.Parse(cronExp)
+	if err != nil {
+		return nil, err
+	}
+
+	next := schedule.Next(r.Now())
+	return &next, nil
 }

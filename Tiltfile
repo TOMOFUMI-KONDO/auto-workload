@@ -43,5 +43,5 @@ docker_build_with_restart(
 )
 
 local_resource(
-    'AutoWorkload Sample', 'kubectl apply -f ./config/samples/_v1beta1_autoworkload.yaml',
-    deps=["./config/samples/_v1beta1_autoworkload.yaml"])
+    'AutoWorkload Sample', 'kubectl apply -f ./config/samples/workload_v1beta1_autoworkload.yaml',
+    deps=["./config/samples/workload_v1beta1_autoworkload.yaml"])

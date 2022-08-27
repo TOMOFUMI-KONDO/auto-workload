@@ -5,7 +5,7 @@ metadata:
   name: autoworkload-editor-role
 rules:
 - apiGroups:
-  - tomokon.github.com
+  - workload.tomo-kon.com
   resources:
   - autoworkloads
   verbs:
@@ -17,7 +17,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - tomokon.github.com
+  - workload.tomo-kon.com
   resources:
   - autoworkloads/status
   verbs:

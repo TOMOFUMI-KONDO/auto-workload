@@ -1,4 +1,4 @@
-domain: tomokon.github.com
+domain: tomo-kon.com
 layout:
 - go.kubebuilder.io/v3
 projectName: auto-workload
@@ -8,7 +8,8 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: tomokon.github.com
+  domain: tomo-kon.com
+  group: workload
   kind: AutoWorkload
   path: github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1
   version: v1beta1

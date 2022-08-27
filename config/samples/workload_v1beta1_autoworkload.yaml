@@ -1,8 +1,9 @@
-apiVersion: tomokon.github.com/v1beta1
+apiVersion: workload.tomo-kon.com/v1beta1
 kind: AutoWorkload
 metadata:
   name: autoworkload-sample
 spec:
+  spec:
   template:
     metadata:
       name: nginx-deployment
