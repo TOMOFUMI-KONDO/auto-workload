@@ -1,0 +1,15 @@
+domain: github.com
+layout:
+- go.kubebuilder.io/v3
+projectName: auto-workload
+repo: github.com/TOMOFUMI-KONDO/auto-workload
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: github.com
+  kind: AutoWorkload
+  path: github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1
+  version: v1beta1
+version: "3"

@@ -1,0 +1,11 @@
+apiVersion: ctlptl.dev/v1alpha1
+kind: Registry
+name: autoworkload-registry
+port: 5000
+---
+apiVersion: ctlptl.dev/v1alpha1
+kind: Cluster
+name: kind-autoworkload-dev
+product: kind
+kubernetesVersion: v1.24.0
+registry: autoworkload-registry
