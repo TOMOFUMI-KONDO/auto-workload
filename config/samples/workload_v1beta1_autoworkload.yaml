@@ -10,7 +10,7 @@ spec:
       labels:
         app: nginx
     spec:
-      replicas: 2
+      replicas: 3
       selector:
         matchLabels:
           app: nginx

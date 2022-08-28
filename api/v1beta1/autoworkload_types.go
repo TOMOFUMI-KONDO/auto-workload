@@ -37,8 +37,11 @@ type AutoWorkloadSpec struct {
 
 // AutoWorkloadStatus defines the observed state of AutoWorkload
 type AutoWorkloadStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// NextStartAt is next time to start Workload Resource
+	NextStartAt *metav1.Time `json:"NextStartAt,omitempty"`
+
+	// NextStopAt is next time to stop Workload Resource
+	NextStopAt *metav1.Time `json:"NextStopAt,omitempty"`
 }
 
 //+kubebuilder:object:root=true

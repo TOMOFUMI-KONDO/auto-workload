@@ -8216,6 +8216,15 @@ spec:
             type: object
           status:
             description: AutoWorkloadStatus defines the observed state of AutoWorkload
+            properties:
+              NextStartAt:
+                description: NextStartAt is next time to start Workload Resource
+                format: date-time
+                type: string
+              NextStopAt:
+                description: NextStopAt is next time to stop Workload Resource
+                format: date-time
+                type: string
             type: object
         type: object
     served: true
