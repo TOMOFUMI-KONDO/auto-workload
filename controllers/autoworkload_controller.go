@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"github.com/robfig/cron/v3"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"time"
 
@@ -46,7 +47,7 @@ type OperationName string
 
 const (
 	OpStart OperationName = "start"
-	OpStop  OperationName = "stop"
+	OpStop                = "stop"
 )
 
 type Operation struct {
@@ -64,43 +65,40 @@ type AutoWorkloadReconciler struct {
 //+kubebuilder:rbac:groups=workload.tomo-kon.com,resources=autoworkloads,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=workload.tomo-kon.com,resources=autoworkloads/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=workload.tomo-kon.com,resources=autoworkloads/finalizers,verbs=update
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.2/pkg/reconcile
-func (r *AutoWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *AutoWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Reconcile started!")
 
 	awl := &workloadv1beta1.AutoWorkload{}
-	if err := r.Get(ctx, client.ObjectKey{Name: req.Name, Namespace: req.Namespace}, awl); err != nil {
+	if err = r.Get(ctx, client.ObjectKey{Name: req.Name, Namespace: req.Namespace}, awl); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	prevStatus := awl.Status.DeepCopy()
+
+	defer func(prevStatus *workloadv1beta1.AutoWorkloadStatus) {
+		if err2 := r.updateStatus(ctx, awl, prevStatus); err2 != nil {
+			logger.Error(err2, "Failed to updateStatus")
+			err = err2
+		}
+	}(awl.Status.DeepCopy())
 
 	if awl.Status.NextStartAt == nil {
-		op := &Operation{Name: OpStart}
-		if err := r.setNextSchedule(ctx, op, awl); err != nil {
-			logger.Error(err, "Failed to setNextSchedule", "operation", op)
-			return ctrl.Result{}, err
-		}
-		if err := r.updateStatus(ctx, awl, prevStatus); err != nil {
-			logger.Error(err, "Failed to updateStatus")
+		if err = r.setNextSchedule(ctx, OpStart, awl); err != nil {
+			logger.Error(err, "Failed to setNextSchedule", "operation_name", OpStart)
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
 
 	if awl.Status.NextStopAt == nil {
-		op := &Operation{Name: OpStop}
-		if err := r.setNextSchedule(ctx, op, awl); err != nil {
-			logger.Error(err, "Failed to setNextSchedule", "operation", op)
-			return ctrl.Result{}, err
-		}
-		if err := r.updateStatus(ctx, awl, prevStatus); err != nil {
-			logger.Error(err, "Failed to updateStatus")
+		if err = r.setNextSchedule(ctx, OpStop, awl); err != nil {
+			logger.Error(err, "Failed to setNextSchedule", "operation_name", OpStop)
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
@@ -119,41 +117,43 @@ func (r *AutoWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	var requeueAfter time.Duration
 	now := r.Now()
 	if now.Before(*priorOp.Time) {
-		logger.Info("Requeue to reconcile at next operation time", "next operation time", *priorOp.Time)
-		return ctrl.Result{Requeue: true, RequeueAfter: priorOp.Time.Sub(now)}, nil
-	} else if now.Before(*postOp.Time) {
-		if err := r.execOp(ctx, &priorOp, awl); err != nil {
-			logger.Error(err, "Failed to execOp", "operation", priorOp)
-			return ctrl.Result{}, err
-		}
-
-		if err := r.setNextSchedule(ctx, &postOp, awl); err != nil {
-			logger.Error(err, "Failed to setNextSchedule", "operation", postOp)
-			return ctrl.Result{}, err
-		}
-		requeueAfter = postOp.Sub(r.Now())
-	} else {
-		if err := r.execOp(ctx, &postOp, awl); err != nil {
+		if err = r.execOp(ctx, postOp.Name, awl); err != nil {
 			logger.Error(err, "Failed to execOp", "operation", postOp)
 			return ctrl.Result{}, err
 		}
 
-		if err := r.setNextSchedule(ctx, &priorOp, awl); err != nil {
-			logger.Error(err, "Failed to setNextSchedule", "operation", priorOp)
+		requeueAfter = priorOp.Sub(r.Now())
+	} else if now.Before(*postOp.Time) {
+		if err = r.execOp(ctx, priorOp.Name, awl); err != nil {
+			logger.Error(err, "Failed to execOp", "operation", priorOp)
 			return ctrl.Result{}, err
 		}
-		if err := r.setNextSchedule(ctx, &postOp, awl); err != nil {
+
+		if err = r.setNextSchedule(ctx, postOp.Name, awl); err != nil {
 			logger.Error(err, "Failed to setNextSchedule", "operation", postOp)
 			return ctrl.Result{}, err
 		}
+
+		requeueAfter = postOp.Sub(r.Now())
+	} else {
+		if err = r.execOp(ctx, postOp.Name, awl); err != nil {
+			logger.Error(err, "Failed to execOp", "operation", postOp)
+			return ctrl.Result{}, err
+		}
+
+		if err = r.setNextSchedule(ctx, priorOp.Name, awl); err != nil {
+			logger.Error(err, "Failed to setNextSchedule", "operation", priorOp)
+			return ctrl.Result{}, err
+		}
+		if err = r.setNextSchedule(ctx, postOp.Name, awl); err != nil {
+			logger.Error(err, "Failed to setNextSchedule", "operation", postOp)
+			return ctrl.Result{}, err
+		}
+
 		requeueAfter = priorOp.Sub(r.Now())
 	}
 
-	if err := r.updateStatus(ctx, awl, prevStatus); err != nil {
-		logger.Error(err, "Failed to updateStatus")
-		return ctrl.Result{}, err
-	}
-
+	logger.Info("Requeue to reconcile at next operation time")
 	return ctrl.Result{Requeue: true, RequeueAfter: requeueAfter}, nil
 }
 
@@ -165,14 +165,15 @@ func (r *AutoWorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&workloadv1beta1.AutoWorkload{}).
+		Owns(&appsv1.Deployment{}).
 		Complete(r)
 }
 
-func (r *AutoWorkloadReconciler) execOp(ctx context.Context, op *Operation, awl *workloadv1beta1.AutoWorkload) error {
+func (r *AutoWorkloadReconciler) execOp(ctx context.Context, opName OperationName, awl *workloadv1beta1.AutoWorkload) error {
 	logger := log.FromContext(ctx)
-	logger.Info("Operation started!", "operation name", op.Name)
+	logger.Info("Operation started!", "operation_name", opName)
 
-	switch op.Name {
+	switch opName {
 	case OpStart:
 		if err := r.createDeployment(ctx, awl); err != nil {
 			logger.Error(err, "Failed to createDeployment")
@@ -185,7 +186,7 @@ func (r *AutoWorkloadReconciler) execOp(ctx context.Context, op *Operation, awl 
 		}
 	}
 
-	logger.Info("Operation completed!", "operation name", op.Name)
+	logger.Info("Operation completed!", "operation name", opName)
 	return nil
 }
 
@@ -194,11 +195,12 @@ func (r *AutoWorkloadReconciler) createDeployment(ctx context.Context, awl *work
 	logger.Info("createDeployment started!")
 
 	deployment := &appsv1.Deployment{}
-	deployment.SetName(awl.Spec.Template.Name)
-	deployment.SetNamespace(awl.Spec.Template.Namespace)
+	deployment.SetName("deployment-" + awl.Name)
+	deployment.SetNamespace(awl.Namespace)
 
 	result, err := ctrl.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		deployment = awl.Spec.Template
+		deployment.Spec = awl.Spec.Template.Spec
+		deployment.Spec.Template.Labels = deployment.Spec.Selector.MatchLabels
 		return nil
 	})
 	if err != nil {
@@ -216,7 +218,7 @@ func (r *AutoWorkloadReconciler) deleteDeployment(ctx context.Context, awl *work
 	logger.Info("deleteDeployment started!")
 
 	deployment := &appsv1.Deployment{}
-	err := r.Get(ctx, client.ObjectKeyFromObject(awl.Spec.Template), deployment)
+	err := r.Get(ctx, client.ObjectKey{Name: "deployment-" + awl.Name, Namespace: awl.Namespace}, deployment)
 	if err != nil {
 		return client.IgnoreNotFound(err)
 	}
@@ -239,18 +241,18 @@ func (r *AutoWorkloadReconciler) deleteDeployment(ctx context.Context, awl *work
 	return nil
 }
 
-func (r *AutoWorkloadReconciler) setNextSchedule(ctx context.Context, op *Operation, awl *workloadv1beta1.AutoWorkload) error {
+func (r *AutoWorkloadReconciler) setNextSchedule(ctx context.Context, opName OperationName, awl *workloadv1beta1.AutoWorkload) error {
 	logger := log.FromContext(ctx)
 	logger.Info("setNextSchedule started!")
 
 	var cronExp string
-	switch op.Name {
+	switch opName {
 	case OpStart:
 		cronExp = awl.Spec.StartAt
 	case OpStop:
 		cronExp = awl.Spec.StopAt
 	default:
-		err := fmt.Errorf("operation name invalid: %s", op.Name)
+		err := fmt.Errorf("operation name invalid: %s", opName)
 		logger.Error(err, "")
 		return err
 	}
@@ -264,7 +266,7 @@ func (r *AutoWorkloadReconciler) setNextSchedule(ctx context.Context, op *Operat
 
 	next := schedule.Next(r.Now())
 	metav1Next := metav1.NewTime(next)
-	switch op.Name {
+	switch opName {
 	case OpStart:
 		awl.Status.NextStartAt = &metav1Next
 	case OpStop:
@@ -279,7 +281,7 @@ func (r *AutoWorkloadReconciler) updateStatus(ctx context.Context, awl *workload
 	logger := log.FromContext(ctx)
 	logger.Info("updateStatus started!")
 
-	if awl.Status == *prev {
+	if equality.Semantic.DeepEqual(awl.Status, *prev) {
 		logger.Info("Status has not been changed")
 		return nil
 	}
@@ -289,5 +291,6 @@ func (r *AutoWorkloadReconciler) updateStatus(ctx context.Context, awl *workload
 		return err
 	}
 
+	logger.Info("updateStatus completed!")
 	return nil
 }

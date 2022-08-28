@@ -5,10 +5,6 @@ metadata:
 spec:
   spec:
   template:
-    metadata:
-      name: nginx-deployment
-      labels:
-        app: nginx
     spec:
       replicas: 3
       selector:
@@ -25,4 +21,4 @@ spec:
               ports:
                 - containerPort: 80
   startAt: "0 7 * * *"
-  stopAt: "0 22 * * *"
+  stopAt: "0 21 * * *"
