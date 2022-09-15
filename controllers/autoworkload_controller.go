@@ -19,11 +19,11 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"github.com/robfig/cron/v3"
+	"time"
+
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,6 +31,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	workloadv1beta1 "github.com/TOMOFUMI-KONDO/auto-workload/api/v1beta1"
+	"github.com/robfig/cron/v3"
+)
+
+const (
+	deploymentPrefix = "deployment-"
 )
 
 type Clock interface {
@@ -117,30 +122,26 @@ func (r *AutoWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	var requeueAfter time.Duration
 	now := r.Now()
 	if now.Before(*priorOp.Time) {
-		if err = r.execOp(ctx, postOp.Name, awl); err != nil {
-			logger.Error(err, "Failed to execOp", "operation", postOp)
+		if err = r.operate(ctx, postOp.Name, awl); err != nil {
+			logger.Error(err, "Failed to operate", "operation", postOp)
 			return ctrl.Result{}, err
 		}
-
-		requeueAfter = priorOp.Sub(r.Now())
+		requeueAfter = priorOp.Sub(now)
 	} else if now.Before(*postOp.Time) {
-		if err = r.execOp(ctx, priorOp.Name, awl); err != nil {
-			logger.Error(err, "Failed to execOp", "operation", priorOp)
+		if err = r.operate(ctx, priorOp.Name, awl); err != nil {
+			logger.Error(err, "Failed to operate", "operation", priorOp)
 			return ctrl.Result{}, err
 		}
-
-		if err = r.setNextSchedule(ctx, postOp.Name, awl); err != nil {
-			logger.Error(err, "Failed to setNextSchedule", "operation", postOp)
+		if err = r.setNextSchedule(ctx, priorOp.Name, awl); err != nil {
+			logger.Error(err, "Failed to setNextSchedule", "operation", priorOp)
 			return ctrl.Result{}, err
 		}
-
-		requeueAfter = postOp.Sub(r.Now())
+		requeueAfter = postOp.Sub(now)
 	} else {
-		if err = r.execOp(ctx, postOp.Name, awl); err != nil {
-			logger.Error(err, "Failed to execOp", "operation", postOp)
+		if err = r.operate(ctx, postOp.Name, awl); err != nil {
+			logger.Error(err, "Failed to operate", "operation", postOp)
 			return ctrl.Result{}, err
 		}
-
 		if err = r.setNextSchedule(ctx, priorOp.Name, awl); err != nil {
 			logger.Error(err, "Failed to setNextSchedule", "operation", priorOp)
 			return ctrl.Result{}, err
@@ -149,8 +150,7 @@ func (r *AutoWorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			logger.Error(err, "Failed to setNextSchedule", "operation", postOp)
 			return ctrl.Result{}, err
 		}
-
-		requeueAfter = priorOp.Sub(r.Now())
+		requeueAfter = priorOp.Sub(now)
 	}
 
 	logger.Info("Requeue to reconcile at next operation time")
@@ -169,20 +169,18 @@ func (r *AutoWorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *AutoWorkloadReconciler) execOp(ctx context.Context, opName OperationName, awl *workloadv1beta1.AutoWorkload) error {
+func (r *AutoWorkloadReconciler) operate(ctx context.Context, opName OperationName, awl *workloadv1beta1.AutoWorkload) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Operation started!", "operation_name", opName)
 
 	switch opName {
 	case OpStart:
 		if err := r.createDeployment(ctx, awl); err != nil {
-			logger.Error(err, "Failed to createDeployment")
-			return err
+			return fmt.Errorf("failed to createDeployment: %w", err)
 		}
 	case OpStop:
 		if err := r.deleteDeployment(ctx, awl); err != nil {
-			logger.Error(err, "Failed to deleteDeployment")
-			return err
+			return fmt.Errorf("failed to deleteDeployment: %w", err)
 		}
 	}
 
@@ -195,17 +193,18 @@ func (r *AutoWorkloadReconciler) createDeployment(ctx context.Context, awl *work
 	logger.Info("createDeployment started!")
 
 	deployment := &appsv1.Deployment{}
-	deployment.SetName("deployment-" + awl.Name)
+	deployment.SetName(deploymentPrefix + awl.Name)
+	// TODO: enable to specify NS where workload resource is placed
 	deployment.SetNamespace(awl.Namespace)
 
+	logger.Info("CreateOrUpdate started!")
 	result, err := ctrl.CreateOrUpdate(ctx, r.Client, deployment, func() error {
 		deployment.Spec = awl.Spec.Template.Spec
-		deployment.Spec.Template.Labels = deployment.Spec.Selector.MatchLabels
+		deployment.Spec.Template.Labels = awl.Spec.Template.Spec.Selector.MatchLabels
 		return nil
 	})
 	if err != nil {
-		logger.Error(err, "Failed to CreateOrUpdate")
-		return err
+		return fmt.Errorf("failed to CreateOrUpdate: %w", err)
 	}
 	logger.Info("CreateOrUpdate completed!", "result", result)
 
@@ -218,7 +217,8 @@ func (r *AutoWorkloadReconciler) deleteDeployment(ctx context.Context, awl *work
 	logger.Info("deleteDeployment started!")
 
 	deployment := &appsv1.Deployment{}
-	err := r.Get(ctx, client.ObjectKey{Name: "deployment-" + awl.Name, Namespace: awl.Namespace}, deployment)
+	// TODO: enable to specify NS where workload resource is placed
+	err := r.Get(ctx, client.ObjectKey{Name: deploymentPrefix + awl.Name, Namespace: awl.Namespace}, deployment)
 	if err != nil {
 		return client.IgnoreNotFound(err)
 	}
@@ -233,8 +233,7 @@ func (r *AutoWorkloadReconciler) deleteDeployment(ctx context.Context, awl *work
 		Preconditions: cond,
 	}
 	if err = r.Delete(ctx, deployment, option); err != nil {
-		logger.Error(err, "Failed to Delete deployment", "Preconditions", cond)
-		return err
+		return fmt.Errorf("failed to Delete deployment with precondition(%v): %w", cond, err)
 	}
 
 	logger.Info("deleteDeployment completed!")
@@ -252,16 +251,13 @@ func (r *AutoWorkloadReconciler) setNextSchedule(ctx context.Context, opName Ope
 	case OpStop:
 		cronExp = awl.Spec.StopAt
 	default:
-		err := fmt.Errorf("operation name invalid: %s", opName)
-		logger.Error(err, "")
-		return err
+		return fmt.Errorf("invalid operation name (%s)", opName)
 	}
 
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	schedule, err := parser.Parse(cronExp)
 	if err != nil {
-		logger.Error(err, "Failed to parse cron expression", "cronExp", cronExp)
-		return err
+		return fmt.Errorf("failed to parse cron expression(%s): %w", cronExp, err)
 	}
 
 	next := schedule.Next(r.Now())
@@ -287,7 +283,6 @@ func (r *AutoWorkloadReconciler) updateStatus(ctx context.Context, awl *workload
 	}
 
 	if err := r.Status().Update(ctx, awl); err != nil {
-		logger.Error(err, "failed to Update status")
 		return err
 	}
 
